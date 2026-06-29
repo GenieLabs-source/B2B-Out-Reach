@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react'
 import Head from 'next/head'
+import Link from 'next/link'
 
 const STAGES = ['Series A', 'Series B', 'Series C']
 const GEOS = ['India', 'USA', 'EU', 'UK', 'UAE']
@@ -174,9 +175,10 @@ export default function Home() {
           <div style={{ maxWidth: 1100, margin: '0 auto', display: 'flex', alignItems: 'center', justifyContent: 'space-between', height: 56 }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
               <span style={{ fontWeight: 600, fontSize: 16, color: '#1a1a1a' }}>AImplify</span>
-              <span style={{ fontSize: 12, color: '#888', background: '#f0f0ef', padding: '2px 8px', borderRadius: 20 }}>Outreach Agent</span>
+              <span style={{ fontSize: 12, color: '#888', background: '#f0f0ef', padding: '2px 8px', borderRadius: 20 }}>Agent</span>
             </div>
-            <div style={{ display: 'flex', gap: 4 }}>
+            <div style={{ display: 'flex', gap: 4, alignItems: 'center' }}>
+              <Link href="/pricing" style={{ fontSize: 13, color: '#555', textDecoration: 'none', padding: '6px 12px' }}>Pricing</Link>
               {['agent', 'crm'].map(t => (
                 <button key={t} onClick={() => setTab(t)} style={{ padding: '6px 16px', border: 'none', borderRadius: 6, cursor: 'pointer', fontSize: 13, background: tab === t ? '#f0f0ef' : 'transparent', color: tab === t ? '#1a1a1a' : '#888', fontWeight: tab === t ? 500 : 400 }}>
                   {t === 'agent' ? 'Agent' : `CRM ${dueCount > 0 ? `(${dueCount} due)` : ''}`}
