@@ -2,10 +2,12 @@ import { getAuthedRequest } from '../../lib/auth-helper'
 import { getSenderProfile, saveSenderProfile } from '../../lib/users'
 
 const MAX_LEN = { companyName: 100, senderName: 60, valueProp: 200, proofPoint: 200, emailSignature: 600 }
+const ROLE_PATTERN = /^[A-Za-z0-9 ,&'\-]{1,60}$/
+const MAX_ROLES = 6
 
 function validateProfile(body) {
   if (!body || typeof body !== 'object') return 'Invalid request body'
-  const { companyName, senderName, valueProp, proofPoint, emailSignature } = body
+  const { companyName, senderName, valueProp, proofPoint, emailSignature, targetRoles } = body
   if (!companyName || !companyName.trim()) return 'Company name is required'
   if (!senderName || !senderName.trim()) return 'Your name is required'
   if (!valueProp || !valueProp.trim()) return 'What you offer is required'
@@ -14,6 +16,9 @@ function validateProfile(body) {
   if (valueProp.length > MAX_LEN.valueProp) return 'Value proposition is too long'
   if (proofPoint && proofPoint.length > MAX_LEN.proofPoint) return 'Proof point is too long'
   if (emailSignature && emailSignature.length > MAX_LEN.emailSignature) return 'Email signature is too long (max 600 characters)'
+  if (!Array.isArray(targetRoles) || targetRoles.length === 0) return 'Select at least one role you want to reach'
+  if (targetRoles.length > MAX_ROLES) return `Max ${MAX_ROLES} target roles`
+  if (!targetRoles.every(r => typeof r === 'string' && ROLE_PATTERN.test(r.trim()))) return 'Target roles must use letters, numbers, and basic punctuation only'
   return null
 }
 
@@ -37,13 +42,14 @@ export default async function handler(req, res) {
     if (validationError) return res.status(400).json({ error: validationError })
 
     try {
-      const { companyName, senderName, valueProp, proofPoint, emailSignature } = req.body
+      const { companyName, senderName, valueProp, proofPoint, emailSignature, targetRoles } = req.body
       await saveSenderProfile(googleId, {
         companyName: companyName.trim(),
         senderName: senderName.trim(),
         valueProp: valueProp.trim(),
         proofPoint: (proofPoint || '').trim(),
-        emailSignature: (emailSignature || '').trim()
+        emailSignature: (emailSignature || '').trim(),
+        targetRoles: targetRoles.map(r => r.trim())
       })
       return res.status(200).json({ success: true })
     } catch (err) {

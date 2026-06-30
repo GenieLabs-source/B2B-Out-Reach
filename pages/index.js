@@ -108,8 +108,10 @@ export default function Home() {
       const vRes = await fetch('/api/verify', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ prospect: p }) })
       const vData = await vRes.json()
       cost += parseFloat(vData.cost_usd || 0)
-      if (vData.verified) {
-        verified.push({ ...p, email: vData.corrected_email || p.email })
+      // Require both: verified=true AND a real email actually found via search.
+      // No email means we can't send to them anyway, so don't carry them forward.
+      if (vData.verified && vData.email) {
+        verified.push({ ...p, email: vData.email })
       }
     }
 
@@ -415,17 +417,36 @@ export default function Home() {
   )
 }
 
+const ROLE_PRESETS = ['Head of Marketing', 'VP Marketing', 'Director of Marketing', 'CMO', 'VP Sales', 'Head of Sales', 'CEO', 'Founder', 'Head of People', 'VP Engineering', 'CTO', 'Head of Product']
+
 function ProfileTab({ profile, onSaved }) {
   const [companyName, setCompanyName] = useState(profile?.company_name || '')
   const [senderName, setSenderName] = useState(profile?.sender_name || profile?.name || '')
   const [valueProp, setValueProp] = useState(profile?.value_prop || '')
   const [proofPoint, setProofPoint] = useState(profile?.proof_point || '')
   const [emailSignature, setEmailSignature] = useState(profile?.email_signature || '')
+  const [targetRoles, setTargetRoles] = useState(profile?.target_roles || [])
+  const [customRole, setCustomRole] = useState('')
   const [saving, setSaving] = useState(false)
   const [saved, setSaved] = useState(false)
   const [error, setError] = useState('')
 
-  const canSave = companyName.trim() && senderName.trim() && valueProp.trim()
+  const canSave = companyName.trim() && senderName.trim() && valueProp.trim() && targetRoles.length > 0
+
+  const toggleRole = (role) => {
+    setTargetRoles(prev => prev.includes(role) ? prev.filter(r => r !== role) : [...prev, role])
+    setSaved(false)
+  }
+
+  const addCustomRole = () => {
+    const val = customRole.trim()
+    if (!val) return
+    if (targetRoles.some(r => r.toLowerCase() === val.toLowerCase())) { setCustomRole(''); return }
+    if (targetRoles.length >= 6) return
+    setTargetRoles([...targetRoles, val])
+    setCustomRole('')
+    setSaved(false)
+  }
 
   const save = async () => {
     if (!canSave) return
@@ -434,7 +455,7 @@ function ProfileTab({ profile, onSaved }) {
       const res = await fetch('/api/profile', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ companyName, senderName, valueProp, proofPoint, emailSignature })
+        body: JSON.stringify({ companyName, senderName, valueProp, proofPoint, emailSignature, targetRoles })
       })
       const data = await res.json()
       if (!res.ok) { setError(data.error || 'Something went wrong'); setSaving(false); return }
@@ -493,6 +514,53 @@ function ProfileTab({ profile, onSaved }) {
         <p style={{ fontSize: 11, fontWeight: 600, color: TEXT_PRIMARY, marginBottom: 4, textTransform: 'uppercase', letterSpacing: '0.04em' }}>Email signature</p>
         <p style={{ fontSize: 12, color: TEXT_TERTIARY, marginBottom: 14 }}>Appended to the end of every drafted email, after "Best,". Plain text only — phone, title, links, etc.</p>
         {field(null, emailSignature, setEmailSignature, 'Priya Sharma\nFounder, Acme Consulting\n+91 98765 43210\nacmeconsulting.com', true, true)}
+      </div>
+
+      <div style={{ background: SURFACE, border: `1px solid ${BORDER}`, borderRadius: RADIUS, padding: '1.5rem', boxShadow: SHADOW_SM, marginTop: 16 }}>
+        <p style={{ fontSize: 11, fontWeight: 600, color: TEXT_PRIMARY, marginBottom: 4, textTransform: 'uppercase', letterSpacing: '0.04em' }}>Who you want to reach</p>
+        <p style={{ fontSize: 12, color: TEXT_TERTIARY, marginBottom: 14 }}>We search for real people in these roles, in priority order.</p>
+        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginBottom: 10 }}>
+          {ROLE_PRESETS.map(role => (
+            <button
+              key={role}
+              onClick={() => toggleRole(role)}
+              style={{
+                fontSize: 12.5, padding: '5px 11px', borderRadius: 7, border: 'none',
+                background: targetRoles.includes(role) ? ACCENT : '#f0f0f2',
+                color: targetRoles.includes(role) ? '#fff' : TEXT_PRIMARY,
+                cursor: 'pointer', fontWeight: 500
+              }}
+            >
+              {role}
+            </button>
+          ))}
+          {targetRoles.filter(r => !ROLE_PRESETS.includes(r)).map(role => (
+            <button
+              key={role}
+              onClick={() => toggleRole(role)}
+              style={{
+                fontSize: 12.5, padding: '5px 9px 5px 11px', borderRadius: 7, border: 'none',
+                background: ACCENT, color: '#fff', cursor: 'pointer', fontWeight: 500,
+                display: 'flex', alignItems: 'center', gap: 5
+              }}
+            >
+              {role}<span style={{ opacity: 0.7, fontSize: 10 }}>✕</span>
+            </button>
+          ))}
+        </div>
+        <div style={{ display: 'flex', gap: 6 }}>
+          <input
+            type="text"
+            value={customRole}
+            onChange={e => setCustomRole(e.target.value)}
+            onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); addCustomRole() } }}
+            placeholder="Other role, e.g. Head of Talent"
+            style={{ flex: 1, fontSize: 13, padding: '7px 10px', border: `1px solid ${BORDER}`, borderRadius: 8, background: '#f9f9fa', color: TEXT_PRIMARY }}
+          />
+          <button onClick={addCustomRole} style={{ fontSize: 12.5, padding: '7px 14px', border: `1px solid ${BORDER}`, background: '#fff', color: TEXT_PRIMARY, borderRadius: 8, cursor: 'pointer', fontWeight: 500 }}>
+            Add
+          </button>
+        </div>
       </div>
 
       {error && <p style={{ fontSize: 12, color: '#dc2626', marginTop: 12 }}>{error}</p>}

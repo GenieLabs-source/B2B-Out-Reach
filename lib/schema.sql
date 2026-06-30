@@ -114,3 +114,7 @@ alter table contacts add column if not exists followup3_draft_id text;
 -- Gmail drafts for follow-ups even when the user isn't actively logged in.
 -- This is separate from the session JWT, which only lives during an active browser session.
 alter table users add column if not exists google_refresh_token text;
+
+-- Target roles the user wants to reach (e.g. "Head of Marketing", "VP Sales")
+-- Stored as a comma-joined text array via Postgres text[] for simple multi-value storage.
+alter table users add column if not exists target_roles text[];
