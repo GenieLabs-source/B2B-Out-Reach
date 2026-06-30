@@ -3,6 +3,13 @@ import { callOpenRouter, MODELS } from '../../lib/openrouter'
 import { createGmailDraft } from '../../lib/gmail'
 import { getSenderProfile } from '../../lib/users'
 
+function appendSignature(body, profile) {
+  const signatureBlock = profile.email_signature && profile.email_signature.trim()
+    ? profile.email_signature.trim()
+    : profile.sender_name
+  return `${body.replace(/\n?Best,?\s*$/i, '').trim()}\n\nBest,\n${signatureBlock}`
+}
+
 export default async function handler(req, res) {
   if (req.method !== 'POST') return res.status(405).json({ error: 'Method not allowed' })
 
@@ -30,7 +37,7 @@ export default async function handler(req, res) {
       ? `A one-line intro: "${profile.sender_name} here, ${profile.value_prop} at ${profile.company_name}. ${profile.proof_point}"`
       : `A one-line intro: "${profile.sender_name} here, ${profile.value_prop} at ${profile.company_name}."`
 
-    const userPrompt = `Write a cold outreach email for this prospect:
+    const userPrompt = `Write a 4-email cold outreach sequence for this prospect:
 
 Name: ${prospect.name}
 First name: ${prospect.name.split(' ')[0]}
@@ -45,40 +52,52 @@ Sender company: ${profile.company_name}
 What sender offers: ${profile.value_prop}
 ${profile.proof_point ? `Sender's proof point: ${profile.proof_point}` : ''}
 
-Email structure (4 short paragraphs, under 120 words total):
-1. Specific genuine observation about their company achievement
-2. The challenge you noticed that relates to what the sender offers
-3. ${proofLine}
-4. "Would love to swap notes for 20 minutes. No pitch, just a quick conversation."
+Write 4 emails:
 
-Rules: subject line uses their first name, max 8 words, no em dashes, creates curiosity. No bullet points. Natural human tone. No AI-sounding phrases. End the email body with just "Best," on its own line — do NOT add a full signature block, name, title, or contact details after it. That will be appended separately.
+EMAIL 1 (primary, send now): 4 short paragraphs, under 120 words. 1) Specific genuine observation about their company achievement. 2) The challenge you noticed that relates to what the sender offers. 3) ${proofLine} 4) "Would love to swap notes for 20 minutes. No pitch, just a quick conversation."
 
-Return ONLY JSON: {"subject": "subject line", "body": "full email body with paragraph breaks as newlines"}`
+EMAIL 2 (follow-up, day 3): Short, casual bump. References email 1 lightly without repeating it. Under 60 words. Something like checking back in, still relevant, no pressure tone.
 
-    const { text, usage } = await callOpenRouter(systemPrompt, userPrompt, MODELS.email, 600)
+EMAIL 3 (follow-up, day 7): Slightly different angle than email 1 — a new specific reason to talk, or a quick useful insight related to their challenge. Under 80 words.
+
+EMAIL 4 (follow-up, day 12): Final, brief, low-pressure close — "should I close the loop on this" tone, leaves door open. Under 50 words.
+
+Rules for ALL emails: subject line uses their first name, max 8 words, no em dashes, creates curiosity, each subject must be different from the others. No bullet points. Natural human tone. No AI-sounding phrases. End each email body with just "Best," on its own line — do NOT add a full signature block, name, title, or contact details after it.
+
+Return ONLY JSON, no markdown:
+{
+  "primary": {"subject": "...", "body": "..."},
+  "followup1": {"subject": "...", "body": "..."},
+  "followup2": {"subject": "...", "body": "..."},
+  "followup3": {"subject": "...", "body": "..."}
+}`
+
+    const { text, usage } = await callOpenRouter(systemPrompt, userPrompt, MODELS.email, 1800)
 
     const clean = text.replace(/```json\s*/gi, '').replace(/```\s*/gi, '').trim()
     const start = clean.indexOf('{')
     const end = clean.lastIndexOf('}')
     if (start === -1 || end === -1) throw new Error('Email agent returned an unexpected format')
-    const emailContent = JSON.parse(clean.slice(start, end + 1))
+    const sequence = JSON.parse(clean.slice(start, end + 1))
 
-    if (!emailContent.subject || !emailContent.body) throw new Error('Email agent response missing subject or body')
+    for (const key of ['primary', 'followup1', 'followup2', 'followup3']) {
+      if (!sequence[key]?.subject || !sequence[key]?.body) {
+        throw new Error(`Email agent response missing ${key}`)
+      }
+    }
 
-    // Append the user's real signature (or a simple fallback) rather than trusting the model to format one
-    const signatureBlock = profile.email_signature && profile.email_signature.trim()
-      ? profile.email_signature.trim()
-      : profile.sender_name
-
-    const fullBody = `${emailContent.body.replace(/\n?Best,?\s*$/i, '').trim()}\n\nBest,\n${signatureBlock}`
+    const primaryBody = appendSignature(sequence.primary.body, profile)
+    const followup1Body = appendSignature(sequence.followup1.body, profile)
+    const followup2Body = appendSignature(sequence.followup2.body, profile)
+    const followup3Body = appendSignature(sequence.followup3.body, profile)
 
     let gmailDraftId = null
     let draftError = null
     try {
       gmailDraftId = await createGmailDraft(token, {
         to: prospect.email,
-        subject: emailContent.subject,
-        body: fullBody
+        subject: sequence.primary.subject,
+        body: primaryBody
       })
     } catch (gErr) {
       console.error('Gmail draft creation failed:', gErr.message)
@@ -86,10 +105,13 @@ Return ONLY JSON: {"subject": "subject line", "body": "full email body with para
     }
 
     res.status(200).json({
-      subject: emailContent.subject,
-      body: fullBody,
+      subject: sequence.primary.subject,
+      body: primaryBody,
       gmailDraftId,
       draftError,
+      followup1: { subject: sequence.followup1.subject, body: followup1Body },
+      followup2: { subject: sequence.followup2.subject, body: followup2Body },
+      followup3: { subject: sequence.followup3.subject, body: followup3Body },
       cost_usd: usage.cost_usd
     })
   } catch (err) {

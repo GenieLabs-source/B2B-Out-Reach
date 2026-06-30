@@ -96,3 +96,21 @@ alter table users add column if not exists onboarded boolean default false;
 
 -- Email signature, appended to every drafted email
 alter table users add column if not exists email_signature text;
+
+-- Store full email content for primary + all 3 followups, generated upfront at research time
+alter table contacts add column if not exists primary_subject text;
+alter table contacts add column if not exists primary_body text;
+alter table contacts add column if not exists followup1_subject text;
+alter table contacts add column if not exists followup1_body text;
+alter table contacts add column if not exists followup2_subject text;
+alter table contacts add column if not exists followup2_body text;
+alter table contacts add column if not exists followup3_subject text;
+alter table contacts add column if not exists followup3_body text;
+alter table contacts add column if not exists followup1_draft_id text;
+alter table contacts add column if not exists followup2_draft_id text;
+alter table contacts add column if not exists followup3_draft_id text;
+
+-- Stores refresh token at account level so scheduled jobs (cron) can create
+-- Gmail drafts for follow-ups even when the user isn't actively logged in.
+-- This is separate from the session JWT, which only lives during an active browser session.
+alter table users add column if not exists google_refresh_token text;

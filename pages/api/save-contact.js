@@ -9,7 +9,7 @@ export default async function handler(req, res) {
   if (!auth) return res.status(401).json({ error: 'Not signed in or session expired' })
   const { googleId } = auth
 
-  const { contact, gmailDraftId } = req.body || {}
+  const { contact, gmailDraftId, emailSequence } = req.body || {}
   if (!contact || typeof contact !== 'object' || !contact.email || !contact.name || !contact.company) {
     return res.status(400).json({ error: 'Invalid contact data — name, email, and company are required' })
   }
@@ -19,7 +19,7 @@ export default async function handler(req, res) {
     const dup = await isDuplicateContact(user.id, contact.email)
     if (dup) return res.status(409).json({ error: 'Duplicate: ' + contact.email })
 
-    await saveContact(user.id, contact, gmailDraftId)
+    await saveContact(user.id, contact, gmailDraftId, emailSequence)
     res.status(200).json({ success: true })
   } catch (err) {
     console.error('Save contact error:', err)

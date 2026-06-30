@@ -1,0 +1,8 @@
+{
+  "crons": [
+    {
+      "path": "/api/cron/followup-drafts",
+      "schedule": "0 9 * * *"
+    }
+  ]
+}

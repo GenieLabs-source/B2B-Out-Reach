@@ -29,7 +29,12 @@ export const authOptions = {
           name: user.name,
           avatar: user.image,
           googleId: profile.sub,
-          country: null
+          country: null,
+          // SECURITY: stored only because scheduled follow-up drafting (cron) needs
+          // Gmail access when the user isn't actively browsing. Service-role only access,
+          // never exposed to the client. Only persisted if Google actually returned one
+          // (it only does on first consent, not on every login).
+          refreshToken: account.refresh_token || null
         })
       } catch (e) {
         console.error('Supabase upsert error:', e.message)
