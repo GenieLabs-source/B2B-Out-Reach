@@ -37,6 +37,7 @@ export default function Home() {
 
   const loadContacts = async () => {
     const res = await fetch('/api/contacts')
+    if (res.status === 401) { router.push('/login'); return }
     if (!res.ok) return
     const data = await res.json()
     if (data.contacts) setContacts(data.contacts)
@@ -46,7 +47,10 @@ export default function Home() {
   const toggle = (arr, setArr, val) => setArr(arr.includes(val) ? arr.filter(x => x !== val) : [...arr, val])
 
   const runAgents = async () => {
-    if (!stages.length || !geos.length) return
+    if (!stages.length || !geos.length) {
+      addLog('system', 'Select at least one funding stage and one geography before running.')
+      return
+    }
     setRunning(true); setLog([]); setProspects([]); setTotalCost(0)
     let cost = 0
 

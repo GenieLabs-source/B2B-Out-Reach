@@ -1,18 +1,37 @@
-import { getServerSession } from 'next-auth'
-import { authOptions } from './auth/[...nextauth]'
+import { getAuthedRequest } from '../../lib/auth-helper'
 import { callOpenRouter, extractJSON, MODELS } from '../../lib/openrouter'
-import { getExistingCompanies, isDuplicate, getOrCreateSheet } from '../../lib/sheets'
+import { getExistingCompanies, isDuplicate, getOrCreateSheet, getSheetContacts } from '../../lib/sheets'
 import { checkAndIncrementRuns, trackApiCost, saveSheetId } from '../../lib/users'
 
+const VALID_STAGES = ['Series A', 'Series B', 'Series C']
+const VALID_GEOS = ['India', 'USA', 'EU', 'UK', 'UAE']
+const VALID_INDUSTRIES = ['B2B SaaS', 'HR Tech', 'Fintech', 'EdTech', 'Dev Tools']
+const MAX_COUNT = 15
+const MIN_COUNT = 1
+
+function validateInput(body) {
+  if (!body || typeof body !== 'object') return 'Invalid request body'
+  const { stages, geos, industries, count } = body
+  if (!Array.isArray(stages) || !stages.length || !stages.every(s => VALID_STAGES.includes(s))) return 'Invalid funding stage selection'
+  if (!Array.isArray(geos) || !geos.length || !geos.every(g => VALID_GEOS.includes(g))) return 'Invalid geography selection'
+  if (!Array.isArray(industries) || !industries.length || !industries.every(i => VALID_INDUSTRIES.includes(i))) return 'Invalid industry selection'
+  if (!Number.isInteger(count) || count < MIN_COUNT || count > MAX_COUNT) return `Prospect count must be between ${MIN_COUNT} and ${MAX_COUNT}`
+  return null
+}
+
 export default async function handler(req, res) {
-  if (req.method !== 'POST') return res.status(405).end()
-  const session = await getServerSession(req, res, authOptions)
-  if (!session) return res.status(401).json({ error: 'Not signed in' })
+  if (req.method !== 'POST') return res.status(405).json({ error: 'Method not allowed' })
 
-  const { stages, geos, industries, roles, count } = req.body
-  const token = session.accessToken
-  const googleId = session.googleId
+  const auth = await getAuthedRequest(req, res)
+  if (!auth) return res.status(401).json({ error: 'Not signed in or session expired. Please sign in again.' })
+  const { accessToken: token, googleId } = auth
 
+  const validationError = validateInput(req.body)
+  if (validationError) return res.status(400).json({ error: validationError })
+
+  const { stages, geos, industries, count } = req.body
+
+  // Only increment quota AFTER we know the request is valid — failed validation should never cost quota
   const runCheck = await checkAndIncrementRuns(googleId)
   if (!runCheck.allowed) {
     return res.status(429).json({
@@ -26,7 +45,8 @@ export default async function handler(req, res) {
     const sheetId = await getOrCreateSheet(token)
     await saveSheetId(googleId, sheetId)
 
-    const existingCompanies = await getExistingCompanies(token, sheetId)
+    const allContacts = await getSheetContacts(token, sheetId)
+    const existingCompanies = await getExistingCompanies(token, sheetId, allContacts)
     const exclusionNote = existingCompanies.length > 0
       ? `IMPORTANT: Do NOT include these companies — already contacted: ${existingCompanies.join(', ')}.` : ''
 
@@ -40,9 +60,12 @@ Return JSON array only. Start with [ end with ]:
     const { text, usage } = await callOpenRouter(systemPrompt, userPrompt, MODELS.research, 4000)
     const prospects = extractJSON(text, 'array')
 
+    if (!Array.isArray(prospects)) throw new Error('Research agent returned an unexpected format')
+
     const filtered = []
     for (const p of prospects) {
-      const dup = await isDuplicate(token, sheetId, p.email)
+      if (!p || !p.email || !p.name || !p.company) continue
+      const dup = await isDuplicate(token, sheetId, p.email, allContacts)
       if (!dup) filtered.push(p)
     }
 
@@ -57,6 +80,7 @@ Return JSON array only. Start with [ end with ]:
       runLimit: runCheck.limit
     })
   } catch (err) {
-    res.status(500).json({ error: err.message })
+    console.error('Research API error:', err)
+    res.status(500).json({ error: 'Something went wrong while researching prospects. Please try again.' })
   }
 }

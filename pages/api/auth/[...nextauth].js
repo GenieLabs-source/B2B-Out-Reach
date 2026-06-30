@@ -42,13 +42,41 @@ export const authOptions = {
         token.refreshToken = account.refresh_token
         token.expiresAt = account.expires_at
         token.googleId = profile?.sub
+        return token
       }
+
+      // Refresh the Google access token if it's expired or about to expire
+      if (token.expiresAt && Date.now() / 1000 > token.expiresAt - 60) {
+        try {
+          const res = await fetch('https://oauth2.googleapis.com/token', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+            body: new URLSearchParams({
+              client_id: process.env.GOOGLE_CLIENT_ID,
+              client_secret: process.env.GOOGLE_CLIENT_SECRET,
+              grant_type: 'refresh_token',
+              refresh_token: token.refreshToken
+            })
+          })
+          const refreshed = await res.json()
+          if (!res.ok) throw refreshed
+          token.accessToken = refreshed.access_token
+          token.expiresAt = Math.floor(Date.now() / 1000) + refreshed.expires_in
+          if (refreshed.refresh_token) token.refreshToken = refreshed.refresh_token
+        } catch (e) {
+          console.error('Token refresh failed:', e)
+          token.refreshError = true
+        }
+      }
+
       return token
     },
     async session({ session, token }) {
-      session.accessToken = token.accessToken
-      session.refreshToken = token.refreshToken
+      // SECURITY: never expose raw Google access/refresh tokens to the client.
+      // Server-side API routes read them from the encrypted JWT via getServerSession,
+      // not from the session object returned to the browser.
       session.googleId = token.googleId
+      session.tokenExpired = token.expiresAt ? Date.now() / 1000 > token.expiresAt : false
       return session
     }
   },
